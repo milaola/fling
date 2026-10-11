@@ -1,12 +1,18 @@
 
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { UserRound, Mail, Lock, Eye, EyeOff } from "lucide-react";
+import {
+  UserRound,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+} from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import AuthLayout from "../components/AuthLayout";
 
 export default function Signup() {
-  const { signup } = useAuth();
+  const { signup, user, loading } = useAuth();
   const navigate = useNavigate();
 
   const [name, setName] = useState("");
@@ -57,13 +63,18 @@ export default function Signup() {
 
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
-          <label htmlFor="name" className="mb-1 block text-xs font-extrabold">
+          <label
+            htmlFor="name"
+            className="mb-1 block text-xs font-extrabold"
+          >
             Full Name
           </label>
+
           <div className={wrapperClass}>
             <UserRound size={16} className="text-slate-400" />
             <input
               id="name"
+              type="text"
               autoComplete="name"
               placeholder="Ace"
               value={name}
@@ -75,9 +86,13 @@ export default function Signup() {
         </div>
 
         <div>
-          <label htmlFor="signup-email" className="mb-1 block text-xs font-extrabold">
+          <label
+            htmlFor="signup-email"
+            className="mb-1 block text-xs font-extrabold"
+          >
             Email Address
           </label>
+
           <div className={wrapperClass}>
             <Mail size={16} className="text-slate-400" />
             <input
@@ -94,9 +109,13 @@ export default function Signup() {
         </div>
 
         <div>
-          <label htmlFor="signup-password" className="mb-1 block text-xs font-extrabold">
+          <label
+            htmlFor="signup-password"
+            className="mb-1 block text-xs font-extrabold"
+          >
             Password
           </label>
+
           <div className={wrapperClass}>
             <Lock size={16} className="text-slate-400" />
             <input
@@ -110,6 +129,7 @@ export default function Signup() {
               minLength={8}
               className={fieldClass}
             />
+
             <button
               type="button"
               aria-label={showPassword ? "Hide password" : "Show password"}
@@ -122,9 +142,13 @@ export default function Signup() {
         </div>
 
         <div>
-          <label htmlFor="confirm-password" className="mb-1 block text-xs font-extrabold">
+          <label
+            htmlFor="confirm-password"
+            className="mb-1 block text-xs font-extrabold"
+          >
             Confirm Password
           </label>
+
           <div className={wrapperClass}>
             <Lock size={16} className="text-slate-400" />
             <input
@@ -149,7 +173,7 @@ export default function Signup() {
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded-lg bg-indigo-600 py-3 text-sm font-extrabold text-white shadow-md shadow-indigo-200 transition hover:bg-indigo-700 disabled:opacity-60"
+          className="w-full rounded-lg bg-indigo-600 py-3 text-sm font-extrabold text-white shadow-md shadow-indigo-200 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {submitting ? "Creating account..." : "Sign Up"}
         </button>
@@ -162,7 +186,9 @@ export default function Signup() {
 
         <button
           type="button"
-          onClick={() => setError("Configure Google sign-in with your authentication provider.")}
+          onClick={() =>
+            setError("Google sign-in is unavailable in demo mode.")
+          }
           className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50"
         >
           <span className="font-black text-blue-600">G</span>
@@ -172,7 +198,10 @@ export default function Signup() {
 
       <p className="mt-5 text-center text-xs text-slate-500">
         Already have an account?{" "}
-        <Link to="/login" className="font-extrabold text-indigo-600 hover:underline">
+        <Link
+          to="/login"
+          className="font-extrabold text-indigo-600 hover:underline"
+        >
           Log in
         </Link>
       </p>

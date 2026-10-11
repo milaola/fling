@@ -8,11 +8,15 @@ import {
 
 const AuthContext = createContext(null);
 
+const USERS_KEY = "fling_demo_users";
+const SESSION_KEY = "fling_user";
+
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
- 
+
   useEffect(() => {
     try {
       const savedUser = localStorage.getItem("fling_user");
@@ -28,16 +32,6 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  
-  async function login(email, password) {
-    if (!email.trim() || !password) {
-      throw new Error("Email and password are required.");
-    }
-
-   
-    throw new Error("Login API is not connected yet.");
-  }
-
 
   async function signup(name, email, password) {
     if (!name.trim() || !email.trim() || !password) {
@@ -48,7 +42,75 @@ export function AuthProvider({ children }) {
       throw new Error("Password must be at least 8 characters.");
     }
 
-    throw new Error("Signup API is not connected yet.");
+    const normalizedEmail = email.trim().toLowerCase();
+    const users = JSON.parse(
+      localStorage.getItem(USERS_KEY) || "[]"
+    );
+
+    if (users.some((item) => item.email === normalizedEmail)) {
+      throw new Error("An account with this email already exists.");
+    }
+
+    const newUser = {
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      email: normalizedEmail,
+      password,
+    };
+
+    localStorage.setItem(
+      USERS_KEY,
+      JSON.stringify([...users, newUser])
+    );
+
+    const sessionUser = {
+      id: newUser.id,
+      name: newUser.name,
+      email: newUser.email,
+    };
+
+    localStorage.setItem(
+      SESSION_KEY,
+      JSON.stringify(sessionUser)
+    );
+
+    setUser(sessionUser);
+    return sessionUser;
+  }
+
+  async function login(email, password) {
+    if (!email.trim() || !password) {
+      throw new Error("Email and password are required.");
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const users = JSON.parse(
+      localStorage.getItem(USERS_KEY) || "[]"
+    );
+
+    const foundUser = users.find(
+      (item) =>
+        item.email === normalizedEmail &&
+        item.password === password
+    );
+
+    if (!foundUser) {
+      throw new Error("Invalid email or password.");
+    }
+
+    const sessionUser = {
+      id: foundUser.id,
+      name: foundUser.name,
+      email: foundUser.email,
+    };
+
+    localStorage.setItem(
+      SESSION_KEY,
+      JSON.stringify(sessionUser)
+    );
+
+    setUser(sessionUser);
+    return sessionUser;
   }
 
 
