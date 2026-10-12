@@ -1,5 +1,7 @@
 
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 const START = { x: 155, y: 335 };
 const SCENE_WIDTH = 800;
@@ -14,13 +16,16 @@ export default function Games() {
   const positionRef = useRef({ ...START });
   const previousTimeRef = useRef(null);
 
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
+
   const [bird, setBird] = useState(START);
   const [aiming, setAiming] = useState(false);
   const [launched, setLaunched] = useState(false);
   const [pigHit, setPigHit] = useState(false);
   const [shots, setShots] = useState(0);
 
-  
+
   const getPoint = (event) => {
     const svg = svgRef.current;
     const rect = svg.getBoundingClientRect();
@@ -39,6 +44,7 @@ export default function Games() {
     setAiming(true);
   };
 
+
   const moveAim = (event) => {
     if (!aiming || launched) return;
 
@@ -52,6 +58,7 @@ export default function Games() {
     positionRef.current = next;
     setBird(next);
   };
+
 
   const releaseBird = () => {
     if (!aiming || launched) return;
@@ -71,7 +78,7 @@ export default function Games() {
     setShots((previous) => previous + 1);
   };
 
- 
+
   const resetLevel = () => {
     if (animationRef.current !== null) {
       cancelAnimationFrame(animationRef.current);
@@ -89,7 +96,13 @@ export default function Games() {
     setShots(0);
   };
 
- 
+
+  const logoutPlayer = () => {
+    logout();
+    navigate("/login", { replace: true });
+  };
+
+
   useEffect(() => {
     if (!launched) return;
 
@@ -116,7 +129,7 @@ export default function Games() {
         y: current.y + velocity.y * delta,
       };
 
-      
+
       const distance = Math.hypot(
         next.x - TARGET.x,
         next.y - TARGET.y
@@ -131,13 +144,13 @@ export default function Games() {
         return;
       }
 
+
       velocity.x *= Math.pow(airResistance, delta);
       velocity.y += gravity * delta;
 
       positionRef.current = next;
       setBird(next);
 
-      
       if (
         next.x > SCENE_WIDTH + 30 ||
         next.y > SCENE_HEIGHT + 30 ||
@@ -163,8 +176,8 @@ export default function Games() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-100 to-lime-100 p-4 sm:p-6">
-   
-      <header className="mx-auto mb-6 flex max-w-5xl items-center justify-between">
+
+      <header className="mx-auto mb-6 flex max-w-5xl flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight text-slate-800">
             Fling
@@ -174,13 +187,26 @@ export default function Games() {
           </p>
         </div>
 
-        <span className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm">
-          Level 1
-        </span>
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <p className="text-xs text-slate-500">Player</p>
+            <p className="font-semibold text-slate-800">
+              Welcome, {user?.name || user?.email || "Player"}!
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={logoutPlayer}
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2 font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-95"
+          >
+            Logout
+          </button>
+        </div>
       </header>
 
       <main className="mx-auto max-w-5xl">
-        
+
         <section className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white p-4 shadow-sm">
           <div>
             <h2 className="text-lg font-bold text-slate-800">
@@ -199,7 +225,7 @@ export default function Games() {
           </span>
         </section>
 
-        
+
         <div className="overflow-hidden rounded-2xl border-4 border-white bg-sky-300 shadow-xl">
           <svg
             ref={svgRef}
@@ -212,10 +238,10 @@ export default function Games() {
             onPointerCancel={releaseBird}
             style={{ touchAction: "none" }}
           >
-            
+
             <rect width="800" height="450" fill="#7dd3fc" />
 
-            
+
             <g fill="white">
               <circle cx="130" cy="80" r="28" />
               <circle cx="160" cy="70" r="36" />
@@ -226,16 +252,16 @@ export default function Games() {
               <circle cx="538" cy="96" r="22" />
             </g>
 
-         
+
             <path d="M0 300 L150 150 L300 300 Z" fill="#86efac" />
             <path d="M220 300 L400 130 L580 300 Z" fill="#4ade80" />
             <path d="M460 300 L620 170 L800 300 Z" fill="#86efac" />
 
-          
+
             <rect y="360" width="800" height="90" fill="#65a30d" />
             <path d="M0 360 Q200 345 400 360 T800 360" fill="#84cc16" />
 
-           
+
             <path
               d="M130 360 L145 275 M160 360 L145 275"
               stroke="#854d0e"
@@ -243,6 +269,7 @@ export default function Games() {
               strokeLinecap="round"
               fill="none"
             />
+
 
             {aiming && (
               <line
@@ -255,6 +282,7 @@ export default function Games() {
                 strokeLinecap="round"
               />
             )}
+
 
             <g
               transform={`translate(${bird.x} ${bird.y})`}
@@ -280,12 +308,12 @@ export default function Games() {
               />
             </g>
 
-            
+
             <rect x="650" y="315" width="22" height="45" fill="#d6a56b" />
             <rect x="700" y="315" width="22" height="45" fill="#d6a56b" />
             <rect x="642" y="300" width="90" height="15" fill="#92400e" />
 
-         
+
             <g>
               <circle cx="685" cy="287" r="18" fill="#a3e635" />
               <circle cx="679" cy="282" r="3" fill="#1f2937" />
@@ -298,6 +326,7 @@ export default function Games() {
               />
             </g>
 
+
             {pigHit && (
               <g>
                 <rect
@@ -306,7 +335,7 @@ export default function Games() {
                   width="350"
                   height="100"
                   rx="20"
-                  fill="#ffffff"
+                  fill="white"
                   opacity="0.95"
                 />
                 <text
