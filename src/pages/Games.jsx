@@ -1,495 +1,952 @@
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 const START = { x: 155, y: 335 };
-const SCENE_WIDTH = 800;
-const SCENE_HEIGHT = 450;
-const TARGET = { x: 685, y: 287, radius: 36 };
+const POWER = 9;
+const GRAVITY = 450;
+const MAX_PULL = 95;
+const GROUND_Y = 405;
 
-export default function Game() {
-  const svgRef = useRef(null);
-  const animationRef = useRef(null);
-  const velocityRef = useRef({ x: 0, y: 0 });
-  const positionRef = useRef({ ...START });
-  const previousTimeRef = useRef(null);
+const LEVELS = [
+  {
+    name: "Green Valley",
+    target: { x: 700, y: 325, radius: 25 },
+    obstacles: [],
+    description: "Aim carefully and hit the target!",
+  },
+  {
+    name: "Rocky Ridge",
+    target: { x: 740, y: 285, radius: 25 },
+    obstacles: [
+      { x: 440, y: 320, width: 42, height: 100 },
+    ],
+    description: "Watch out for the obstacle!",
+  },
+  {
+    name: "Sky High",
+    target: { x: 785, y: 240, radius: 25 },
+    obstacles: [
+      { x: 420, y: 300, width: 42, height: 120 },
+      { x: 580, y: 255, width: 42, height: 165 },
+    ],
+    description: "Two obstacles. Can you make the shot?",
+  },
+];
 
-  const navigate = useNavigate();
+export default function Games() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
-  const [bird, setBird] = useState(START);
+  const [levelIndex, setLevelIndex] = useState(0);
+  const [bird, setBird] = useState({ ...START });
+  const [aimPoint, setAimPoint] = useState({ ...START });
   const [aiming, setAiming] = useState(false);
   const [launched, setLaunched] = useState(false);
-  const [pigHit, setPigHit] = useState(false);
   const [shots, setShots] = useState(0);
+  const [gameStatus, setGameStatus] = useState("playing");
+  const [message, setMessage] = useState("");
 
-  const getPoint = (event) => {
+  const svgRef = useRef(null);
+  const animationRef = useRef(null);
+  const positionRef = useRef({ ...START });
+  const velocityRef = useRef({ x: 0, y: 0 });
+  const lastTimeRef = useRef(null);
+  const aimingRef = useRef(false);
+
+  const level = LEVELS[levelIndex];
+
+  const stopAnimation = useCallback(() => {
+    if (animationRef.current !== null) {
+      cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
+    }
+    lastTimeRef.current = null;
+  }, []);
+
+  const resetLevel = useCallback(() => {
+    stopAnimation();
+
+    positionRef.current = { ...START };
+    velocityRef.current = { x: 0, y: 0 };
+    lastTimeRef.current = null;
+    aimingRef.current = false;
+
+    setBird({ ...START });
+    setAimPoint({ ...START });
+    setAiming(false);
+    setLaunched(false);
+    setShots(0);
+    setGameStatus("playing");
+    setMessage("");
+  }, [stopAnimation]);
+
+  const getPoint = useCallback((event) => {
     const svg = svgRef.current;
-    if (!svg) return START;
+    if (!svg) return null;
 
-    const rect = svg.getBoundingClientRect();
+    const point = svg.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+
+    const matrix = svg.getScreenCTM();
+    if (!matrix) return null;
+
+    const transformed = point.matrixTransform(matrix.inverse());
 
     return {
-      x: ((event.clientX - rect.left) / rect.width) * SCENE_WIDTH,
-      y: ((event.clientY - rect.top) / rect.height) * SCENE_HEIGHT,
+      x: transformed.x,
+      y: transformed.y,
     };
-  };
+  }, []);
 
-  const startAim = (event) => {
-    if (launched || pigHit) return;
+  const handlePointerDown = (event) => {
+    if (gameStatus !== "playing" || launched) return;
 
     const point = getPoint(event);
+    if (!point) return;
+
     const distance = Math.hypot(
-      point.x - bird.x,
-      point.y - bird.y
+      point.x - START.x,
+      point.y - START.y
     );
 
-
-    if (distance > 35) return;
+    if (distance > 55) return;
 
     event.preventDefault();
     event.currentTarget.setPointerCapture?.(event.pointerId);
+
+    aimingRef.current = true;
     setAiming(true);
+    setAimPoint({ ...START });
   };
 
-  const moveAim = (event) => {
-    if (!aiming || launched || pigHit) return;
+  const handlePointerMove = (event) => {
+    if (!aimingRef.current) return;
+
+    const point = getPoint(event);
+    if (!point) return;
+
+    let dx = point.x - START.x;
+    let dy = point.y - START.y;
+
+   
+    dx = Math.min(dx, 0);
+
+    const distance = Math.hypot(dx, dy);
+
+    if (distance > MAX_PULL) {
+      const scale = MAX_PULL / distance;
+      dx *= scale;
+      dy *= scale;
+    }
+
+    const nextPoint = {
+      x: START.x + dx,
+      y: START.y + dy,
+    };
+
+    positionRef.current = nextPoint;
+    setBird(nextPoint);
+    setAimPoint(nextPoint);
+  };
+
+  const releaseBird = (event) => {
+    if (!aimingRef.current) return;
 
     const point = getPoint(event);
 
-    const next = {
-      x: Math.max(90, Math.min(START.x, point.x)),
-      y: Math.max(260, Math.min(360, point.y)),
-    };
-
-    positionRef.current = next;
-    setBird(next);
+    if (point) {
+      handleAimRelease(point);
+    } else {
+      handleAimRelease(aimPoint);
+    }
   };
 
-  const releaseBird = () => {
-    if (!aiming || launched || pigHit) return;
+  const handleAimRelease = (point) => {
+    if (!aimingRef.current) return;
 
-    const dx = START.x - positionRef.current.x;
-    const dy = START.y - positionRef.current.y;
+    aimingRef.current = false;
+    setAiming(false);
 
+    const dx = START.x - point.x;
+    const dy = START.y - point.y;
+    const pullDistance = Math.hypot(dx, dy);
 
-    if (Math.hypot(dx, dy) < 8) {
+    if (pullDistance < 8) {
       positionRef.current = { ...START };
       setBird({ ...START });
-      setAiming(false);
+      setAimPoint({ ...START });
       return;
     }
 
     velocityRef.current = {
-      x: dx * 0.16,
-      y: dy * 0.16,
+      x: dx * POWER,
+      y: dy * POWER,
     };
 
-    previousTimeRef.current = null;
-    setAiming(false);
+    setShots((previous) => previous + 1);
     setLaunched(true);
-    setShots((count) => count + 1);
-  };
-
-  const resetLevel = () => {
-    if (animationRef.current !== null) {
-      cancelAnimationFrame(animationRef.current);
-    }
-
-    animationRef.current = null;
-    velocityRef.current = { x: 0, y: 0 };
-    positionRef.current = { ...START };
-    previousTimeRef.current = null;
-
-    setBird({ ...START });
-    setAiming(false);
-    setLaunched(false);
-    setPigHit(false);
-    setShots(0);
-  };
-
-  const logoutPlayer = async () => {
-    try {
-      await logout();
-      navigate("/login", { replace: true });
-    } catch (error) {
-      console.error("Logout failed:", error);
-    }
   };
 
   useEffect(() => {
-    if (!launched || pigHit) return;
+    if (!launched || gameStatus !== "playing") return;
 
-    const gravity = 0.35;
-    const airResistance = 0.99;
+    let frameId = null;
+    let previousTime = null;
+    let finished = false;
 
-    const animate = (time) => {
-      if (previousTimeRef.current === null) {
-        previousTimeRef.current = time;
+    const finish = (status, text) => {
+      if (finished) return;
+      finished = true;
+
+      setGameStatus(status);
+      setMessage(text);
+      setLaunched(false);
+
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId);
       }
 
-      const delta = Math.min(
-        (time - previousTimeRef.current) / 16.67,
-        2
-      );
+      animationRef.current = null;
+    };
 
-      previousTimeRef.current = time;
+    const animate = (time) => {
+      if (finished) return;
 
+      if (previousTime === null) previousTime = time;
+
+      const dt = Math.min((time - previousTime) / 1000, 0.03);
+      previousTime = time;
+
+      const current = positionRef.current;
       const velocity = velocityRef.current;
-      const position = positionRef.current;
 
       const next = {
-        x: position.x + velocity.x * delta,
-        y: position.y + velocity.y * delta,
+        x: current.x + velocity.x * dt,
+        y: current.y + velocity.y * dt,
       };
+
+      velocity.y += GRAVITY * dt;
 
       positionRef.current = next;
       setBird(next);
 
-      const distance = Math.hypot(
-        next.x - TARGET.x,
-        next.y - TARGET.y
+      const target = level.target;
+      const distanceToTarget = Math.hypot(
+        next.x - target.x,
+        next.y - target.y
       );
 
-      if (distance <= TARGET.radius) {
-        setPigHit(true);
-        setLaunched(false);
-        animationRef.current = null;
+      if (distanceToTarget <= target.radius + 12) {
+        finish("won", "Great shot! You hit the target!");
         return;
       }
 
-      velocity.x *= Math.pow(airResistance, delta);
-      velocity.y += gravity * delta;
+      
+      const hitObstacle = level.obstacles.some((obstacle) => {
+        return (
+          next.x + 12 >= obstacle.x &&
+          next.x - 12 <= obstacle.x + obstacle.width &&
+          next.y + 12 >= obstacle.y &&
+          next.y - 12 <= obstacle.y + obstacle.height
+        );
+      });
+
+      if (hitObstacle) {
+        finish("missed", "Oh no! You hit an obstacle.");
+        return;
+      }
 
       if (
-        next.x < -40 ||
-        next.x > SCENE_WIDTH + 40 ||
-        next.y > SCENE_HEIGHT + 40 ||
-        next.y < -40
+        next.y + 12 >= GROUND_Y ||
+        next.x > 990 ||
+        next.x < -30 ||
+        next.y < -80
       ) {
-        setLaunched(false);
-        animationRef.current = null;
+        finish("missed", "Missed! Adjust your aim and try again.");
         return;
       }
 
-      animationRef.current = requestAnimationFrame(animate);
+      frameId = requestAnimationFrame(animate);
+      animationRef.current = frameId;
     };
 
-    animationRef.current = requestAnimationFrame(animate);
+    frameId = requestAnimationFrame(animate);
+    animationRef.current = frameId;
 
     return () => {
-      if (animationRef.current !== null) {
-        cancelAnimationFrame(animationRef.current);
-      }
-      animationRef.current = null;
-    };
-  }, [launched, pigHit]);
+      finished = true;
 
-  const playerName = user?.name || user?.email || "Player";
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId);
+      }
+
+      if (animationRef.current === frameId) {
+        animationRef.current = null;
+      }
+    };
+  }, [launched, gameStatus, level]);
+
+  useEffect(() => {
+    return () => stopAnimation();
+  }, [stopAnimation]);
+
+  const nextLevel = () => {
+    if (levelIndex < LEVELS.length - 1) {
+      setLevelIndex((previous) => previous + 1);
+
+      
+      stopAnimation();
+      positionRef.current = { ...START };
+      velocityRef.current = { x: 0, y: 0 };
+      aimingRef.current = false;
+
+      setBird({ ...START });
+      setAimPoint({ ...START });
+      setAiming(false);
+      setLaunched(false);
+      setShots(0);
+      setGameStatus("playing");
+      setMessage("");
+    }
+  };
+
+  const handleLogout = async () => {
+    stopAnimation();
+    await logout();
+    navigate("/login");
+  };
+
+  const allLevelsCompleted =
+    gameStatus === "won" && levelIndex === LEVELS.length - 1;
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-sky-300 via-sky-200 to-lime-200 p-4 text-slate-800 md:p-8">
-      <div className="mx-auto max-w-6xl">
-        <header className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/60 bg-white/70 p-4 shadow-lg backdrop-blur-md">
-          <div>
-            <h1 className="text-3xl font-black tracking-tight text-emerald-700">
-              Fling
-            </h1>
-            <p className="text-sm text-slate-600">
-              Aim carefully. Fling boldly.
-            </p>
-          </div>
+    <div className="h-dvh min-h-[480px] overflow-hidden bg-sky-300 text-white">
+      <header className="relative z-10 flex h-14 items-center justify-between gap-3 bg-indigo-950 px-4 shadow-lg sm:px-8">
+        <div className="flex items-center gap-2">
+          <span className="text-2xl font-black italic tracking-wider text-amber-400">
+            FLING
+          </span>
+          <span className="hidden rounded-full bg-indigo-800 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-indigo-200 sm:inline">
+            Puzzle adventure
+          </span>
+        </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <p className="text-sm font-semibold text-slate-700">
-              Welcome, {playerName}!
-            </p>
+        <div className="flex items-center gap-3">
+          <span className="hidden text-sm text-indigo-100 sm:inline">
+            Welcome,{" "}
+            <strong className="text-amber-300">
+              {user?.name || user?.email || "Player"}
+            </strong>
+          </span>
 
-            <button
-              type="button"
-              onClick={logoutPlayer}
-              className="rounded-xl bg-rose-500 px-4 py-2 font-bold text-white shadow transition hover:bg-rose-600 focus:outline-none focus:ring-2 focus:ring-rose-400 focus:ring-offset-2"
-            >
-              Log out
-            </button>
-          </div>
-        </header>
-
-
-        <section className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/60 bg-white/70 p-4 shadow-md">
-          <div>
-            <h2 className="text-xl font-extrabold">
-              Level 1: The First Fling
-            </h2>
-            <p className="text-sm text-slate-600">
-              Pull the bird backward, then release to launch it.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <span className="rounded-xl bg-emerald-100 px-4 py-2 font-bold text-emerald-800">
-              Shots: {shots}
-            </span>
-
-            <button
-              type="button"
-              onClick={resetLevel}
-              className="rounded-xl bg-slate-800 px-4 py-2 font-bold text-white transition hover:bg-slate-700"
-            >
-              Reset
-            </button>
-          </div>
-        </section>
-
-
-        <section className="overflow-hidden rounded-3xl border-4 border-white/80 bg-sky-100 shadow-2xl">
-          <svg
-            ref={svgRef}
-            viewBox={`0 0 ${SCENE_WIDTH} ${SCENE_HEIGHT}`}
-            className="block w-full touch-none select-none"
-            style={{ aspectRatio: "800 / 450" }}
-            onPointerMove={moveAim}
-            onPointerUp={releaseBird}
-            onPointerCancel={releaseBird}
+          <button
+            onClick={handleLogout}
+            className="rounded-lg border border-indigo-700 px-3 py-1.5 text-sm font-semibold transition hover:bg-indigo-800"
           >
+            Log out
+          </button>
+        </div>
+      </header>
 
-            <rect
-              width={SCENE_WIDTH}
-              height={SCENE_HEIGHT}
-              fill="#bae6fd"
-            />
+    
+      <main className="relative h-[calc(100dvh-56px)] min-h-[424px]">
+        <svg
+          ref={svgRef}
+          viewBox="0 0 960 540"
+          preserveAspectRatio="xMidYMid meet"
+          className={`absolute inset-0 h-full w-full touch-none select-none ${aiming ? "cursor-grabbing" : launched ? "cursor-default" : "cursor-grab"
+            }`}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={releaseBird}
+          onPointerCancel={releaseBird}
+          role="img"
+          aria-label="Fling puzzle game. Drag the blue bird backwards and release it to hit the green target."
+        >
+          <defs>
+            <linearGradient id="skyGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#38bdf8" />
+              <stop offset="65%" stopColor="#bae6fd" />
+              <stop offset="100%" stopColor="#e0f2fe" />
+            </linearGradient>
 
+            <linearGradient id="mountainGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#647fb8" />
+              <stop offset="100%" stopColor="#354b82" />
+            </linearGradient>
 
-            <g fill="#ffffff" opacity="0.9">
-              <ellipse cx="130" cy="75" rx="48" ry="18" />
-              <circle cx="110" cy="65" r="22" />
-              <circle cx="140" cy="57" r="28" />
-              <circle cx="165" cy="70" r="19" />
+            <linearGradient id="hillGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#2dd4bf" />
+              <stop offset="100%" stopColor="#0f766e" />
+            </linearGradient>
 
-              <ellipse cx="530" cy="85" rx="48" ry="16" />
-              <circle cx="510" cy="75" r="21" />
-              <circle cx="540" cy="67" r="26" />
-              <circle cx="565" cy="80" r="17" />
+            <linearGradient id="grassGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#84cc16" />
+              <stop offset="100%" stopColor="#4d7c0f" />
+            </linearGradient>
+
+            <linearGradient id="woodGradient" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#92400e" />
+              <stop offset="50%" stopColor="#d97706" />
+              <stop offset="100%" stopColor="#92400e" />
+            </linearGradient>
+
+            <filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="4" />
+            </filter>
+          </defs>
+
+       
+          <rect width="960" height="540" fill="url(#skyGradient)" />
+
+          
+          <g fill="#ffffff" opacity="0.72">
+            <g transform="translate(250 90)">
+              <ellipse cx="0" cy="14" rx="45" ry="15" />
+              <circle cx="-20" cy="5" r="20" />
+              <circle cx="5" cy="-7" r="28" />
+              <circle cx="30" cy="6" r="20" />
             </g>
 
+            <g transform="translate(700 105) scale(0.8)">
+              <ellipse cx="0" cy="14" rx="45" ry="15" />
+              <circle cx="-20" cy="5" r="20" />
+              <circle cx="5" cy="-7" r="28" />
+              <circle cx="30" cy="6" r="20" />
+            </g>
 
-            <path
-              d="M0 300 Q150 190 300 300 T600 280 T800 300 V450 H0Z"
-              fill="#86efac"
+            <g transform="translate(470 45) scale(0.55)">
+              <ellipse cx="0" cy="14" rx="45" ry="15" />
+              <circle cx="-20" cy="5" r="20" />
+              <circle cx="5" cy="-7" r="28" />
+              <circle cx="30" cy="6" r="20" />
+            </g>
+          </g>
+
+          
+          <path
+            d="M0 310 L110 190 L175 265 L275 145 L380 280 L480 185 L590 290 L710 170 L840 285 L920 210 L960 255 L960 420 L0 420 Z"
+            fill="url(#mountainGradient)"
+          />
+
+          <path
+            d="M110 190 L142 226 L125 221 L110 238 L95 222 Z"
+            fill="#e0f2fe"
+            opacity="0.9"
+          />
+          <path
+            d="M275 145 L315 202 L291 191 L275 207 L255 192 Z"
+            fill="#f0f9ff"
+            opacity="0.95"
+          />
+          <path
+            d="M710 170 L748 214 L724 206 L710 222 L693 207 Z"
+            fill="#e0f2fe"
+            opacity="0.9"
+          />
+
+       
+          <path
+            d="M0 330 Q130 265 255 335 T510 330 T770 320 T960 300 L960 440 L0 440 Z"
+            fill="#38bdf8"
+          />
+
+          <path
+            d="M0 360 Q130 310 260 355 T520 355 T780 345 T960 330 L960 440 L0 440 Z"
+            fill="url(#hillGradient)"
+          />
+
+   
+          <path
+            d="M0 380 Q120 350 230 380 T460 375 T700 365 T960 360 L960 430 L0 430 Z"
+            fill="#0891b2"
+            opacity="0.6"
+          />
+
+          <g stroke="#bae6fd" strokeWidth="3" opacity="0.55" strokeLinecap="round">
+            <path d="M520 380 h55" />
+            <path d="M605 392 h35" />
+            <path d="M760 374 h60" />
+            <path d="M835 390 h30" />
+            <path d="M300 390 h42" />
+          </g>
+
+          
+          <ellipse
+            cx="480"
+            cy="414"
+            rx="470"
+            ry="20"
+            fill="#14532d"
+            opacity="0.25"
+            filter="url(#softShadow)"
+          />
+
+          <rect x="0" y="395" width="960" height="145" fill="url(#grassGradient)" />
+          <path d="M0 395 Q140 380 260 396 T510 395 T770 390 T960 395 L960 410 L0 410 Z" fill="#a3e635" />
+
+          
+          <g stroke="#3f6212" strokeWidth="2" strokeLinecap="round" opacity="0.65">
+            {Array.from({ length: 35 }, (_, i) => (
+              <path
+                key={i}
+                d={`M${15 + i * 28} 405 l-4 -8 m4 8 l5 -6`}
+              />
+            ))}
+          </g>
+
+         
+          <ellipse cx={START.x} cy="398" rx="38" ry="7" fill="#365314" opacity="0.35" />
+
+          <path
+            d="M135 401 L151 328 Q154 315 164 325 L177 401 Z"
+            fill="#78350f"
+            stroke="#451a03"
+            strokeWidth="3"
+            strokeLinejoin="round"
+          />
+
+          <path
+            d="M151 335 L132 288 Q128 278 136 273 Q144 269 149 281 L164 318"
+            fill="none"
+            stroke="#92400e"
+            strokeWidth="13"
+            strokeLinecap="round"
+          />
+
+          <path
+            d="M158 322 L178 280 Q183 269 191 275 Q198 280 192 291 L171 335"
+            fill="none"
+            stroke="#92400e"
+            strokeWidth="13"
+            strokeLinecap="round"
+          />
+
+          <path
+            d="M137 285 L157 330"
+            fill="none"
+            stroke="#d97706"
+            strokeWidth="3"
+            strokeLinecap="round"
+          />
+
+          
+          <path
+            d="M151 350 Q159 354 167 349 M149 370 Q158 374 170 368"
+            fill="none"
+            stroke="#b45309"
+            strokeWidth="2"
+            opacity="0.8"
+          />
+
+          
+          {aiming && (
+            <g>
+              {Array.from({ length: 12 }, (_, i) => {
+                const dx = START.x - bird.x;
+                const dy = START.y - bird.y;
+                const speed = Math.hypot(dx, dy) * POWER;
+                const vx = speed > 0 ? (dx / Math.hypot(dx, dy)) * speed : 0;
+                const vy = speed > 0 ? (dy / Math.hypot(dx, dy)) * speed : 0;
+                const t = (i + 1) * 0.09;
+
+                return (
+                  <circle
+                    key={i}
+                    cx={bird.x + vx * t}
+                    cy={bird.y + vy * t + 0.5 * GRAVITY * t * t}
+                    r={Math.max(2, 4 - i * 0.18)}
+                    fill="#ffffff"
+                    opacity={0.85 - i * 0.055}
+                  />
+                );
+              })}
+            </g>
+          )}
+
+        
+          <path
+            d={`M137 285 Q${(137 + bird.x) / 2} ${(285 + bird.y) / 2 - 5} ${bird.x} ${bird.y}`}
+            fill="none"
+            stroke="#78350f"
+            strokeWidth="5"
+            strokeLinecap="round"
+          />
+
+          
+          <g>
+            <ellipse
+              cx={level.target.x}
+              cy="399"
+              rx="82"
+              ry="8"
+              fill="#365314"
+              opacity="0.3"
             />
 
+          
+            <rect
+              x={level.target.x - 58}
+              y={level.target.y - 40}
+              width="16"
+              height={440 - (level.target.y - 40)}
+              rx="2"
+              fill="url(#woodGradient)"
+              stroke="#78350f"
+              strokeWidth="3"
+            />
 
             <rect
-              x="0"
-              y="360"
-              width={SCENE_WIDTH}
-              height="90"
-              fill="#65a30d"
-            />
-            <path
-              d="M0 360 Q200 345 400 365 T800 355"
-              fill="none"
-              stroke="#4d7c0f"
-              strokeWidth="5"
+              x={level.target.x + 42}
+              y={level.target.y - 40}
+              width="16"
+              height={440 - (level.target.y - 40)}
+              rx="2"
+              fill="url(#woodGradient)"
+              stroke="#78350f"
+              strokeWidth="3"
             />
 
+           
+            <rect
+              x={level.target.x - 72}
+              y={level.target.y - 45}
+              width="144"
+              height="16"
+              rx="3"
+              fill="url(#woodGradient)"
+              stroke="#78350f"
+              strokeWidth="3"
+            />
 
+            
             <path
-              d="M125 360 L145 275 Q150 260 160 275 L185 360"
-              fill="none"
+              d={`M${level.target.x - 55} ${level.target.y + 25} L${level.target.x + 42} ${level.target.y + 80}`}
               stroke="#92400e"
-              strokeWidth="14"
+              strokeWidth="10"
               strokeLinecap="round"
+            />
+
+            <path
+              d={`M${level.target.x + 48} ${level.target.y + 25} L${level.target.x - 42} ${level.target.y + 80}`}
+              stroke="#92400e"
+              strokeWidth="10"
+              strokeLinecap="round"
+            />
+
+           
+            <path
+              d={`M${level.target.x - 48} ${level.target.y - 38} v8 M${level.target.x + 50} ${level.target.y - 38} v8`}
+              stroke="#fbbf24"
+              strokeWidth="2"
+            />
+          </g>
+
+         
+          {level.obstacles.map((obstacle, index) => (
+            <g key={`${levelIndex}-${index}`}>
+              <rect
+                x={obstacle.x}
+                y={obstacle.y}
+                width={obstacle.width}
+                height={obstacle.height}
+                rx="4"
+                fill="url(#woodGradient)"
+                stroke="#78350f"
+                strokeWidth="3"
+              />
+
+              <path
+                d={`M${obstacle.x + 8} ${obstacle.y + 8} v${obstacle.height - 16} M${obstacle.x + obstacle.width - 8} ${obstacle.y + 8} v${obstacle.height - 16}`}
+                stroke="#fbbf24"
+                strokeWidth="2"
+                opacity="0.65"
+              />
+            </g>
+          ))}
+
+          
+          <g transform={`translate(${level.target.x} ${level.target.y})`}>
+            <ellipse
+              cx="-18"
+              cy="-22"
+              rx="12"
+              ry="15"
+              fill="#4d7c0f"
+              stroke="#365314"
+              strokeWidth="3"
+              transform="rotate(-25 -18 -22)"
+            />
+
+            <ellipse
+              cx="18"
+              cy="-22"
+              rx="12"
+              ry="15"
+              fill="#4d7c0f"
+              stroke="#365314"
+              strokeWidth="3"
+              transform="rotate(25 18 -22)"
+            />
+
+            
+            <circle
+              r="26"
+              fill="#84cc16"
+              stroke="#3f6212"
+              strokeWidth="3"
+            />
+
+           
+            <ellipse cx="-9" cy="-6" rx="6" ry="8" fill="#ffffff" />
+            <ellipse cx="9" cy="-6" rx="6" ry="8" fill="#ffffff" />
+            <circle cx="-8" cy="-5" r="3" fill="#172554" />
+            <circle cx="10" cy="-5" r="3" fill="#172554" />
+
+            
+            <ellipse
+              cx="0"
+              cy="8"
+              rx="14"
+              ry="10"
+              fill="#bef264"
+              stroke="#4d7c0f"
+              strokeWidth="2"
+            />
+
+            <ellipse cx="-5" cy="8" rx="2.5" ry="3.5" fill="#365314" />
+            <ellipse cx="5" cy="8" rx="2.5" ry="3.5" fill="#365314" />
+
+            <path
+              d="M-7 17 Q0 22 7 17"
+              fill="none"
+              stroke="#365314"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          </g>
+
+         
+          <g transform={`translate(${bird.x} ${bird.y})`}>
+            {!launched && (
+              <ellipse
+                cx="0"
+                cy="17"
+                rx="16"
+                ry="5"
+                fill="#0c4a6e"
+                opacity="0.2"
+              />
+            )}
+
+            
+            <path
+              d="M-15 3 L-25 -4 L-23 6 L-31 8 L-20 13 Z"
+              fill="#0369a1"
+              stroke="#075985"
+              strokeWidth="2"
               strokeLinejoin="round"
             />
 
+           
+            <circle
+              r="17"
+              fill="#38bdf8"
+              stroke="#075985"
+              strokeWidth="3"
+            />
 
+          
+            <ellipse
+              cx="-3"
+              cy="5"
+              rx="9"
+              ry="6"
+              fill="#0284c7"
+              transform="rotate(-25 -3 5)"
+            />
+
+            
             <path
-              d={
-                aiming
-                  ? `M145 278 L${bird.x} ${bird.y}`
-                  : `M145 278 L${START.x} ${START.y}`
-              }
+              d="M-7 -14 Q-14 -25 -3 -23 Q2 -22 1 -15"
+              fill="#0284c7"
+              stroke="#075985"
+              strokeWidth="2"
+            />
+
+         
+            <ellipse cx="6" cy="-5" rx="6" ry="7" fill="#ffffff" />
+            <ellipse cx="7" cy="-4" rx="3" ry="4" fill="#172554" />
+            <circle cx="8" cy="-6" r="1.3" fill="#ffffff" />
+
+          
+            <path
+              d="M13 1 L26 5 L14 10 Z"
+              fill="#fbbf24"
+              stroke="#b45309"
+              strokeWidth="2"
+              strokeLinejoin="round"
+            />
+
+            
+            <circle cx="5" cy="7" r="3" fill="#7dd3fc" opacity="0.8" />
+          </g>
+
+         
+          {aiming && (
+            <path
+              d={`M190 282 Q${(190 + bird.x) / 2} ${(282 + bird.y) / 2} ${bird.x} ${bird.y}`}
               fill="none"
-              stroke="#78350f"
+              stroke="#451a03"
               strokeWidth="5"
               strokeLinecap="round"
             />
+          )}
+        </svg>
 
+       
+        <div className="pointer-events-none absolute left-3 top-3 right-3 flex items-start justify-between gap-2 sm:left-6 sm:right-6 sm:top-5">
+          <div className="max-w-[65%] rounded-2xl border border-white/30 bg-indigo-950/80 px-4 py-3 shadow-lg backdrop-blur-sm">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300">
+              Level {levelIndex + 1} of {LEVELS.length}
+            </p>
 
-            <g>
-              <rect
-                x="620"
-                y="325"
-                width="130"
-                height="15"
-                rx="4"
-                fill="#b45309"
-              />
-              <rect
-                x="638"
-                y="295"
-                width="18"
-                height="30"
-                rx="3"
-                fill="#d97706"
-              />
-              <rect
-                x="715"
-                y="295"
-                width="18"
-                height="30"
-                rx="3"
-                fill="#d97706"
-              />
-              <rect
-                x="625"
-                y="280"
-                width="125"
-                height="12"
-                rx="3"
-                fill="#f59e0b"
-              />
-            </g>
+            <h1 className="mt-0.5 text-lg font-black leading-tight sm:text-2xl">
+              {level.name}
+            </h1>
 
+            <p className="mt-1 text-xs text-indigo-100 sm:text-sm">
+              {level.description}
+            </p>
+          </div>
 
-            <g>
-              <circle
-                cx={TARGET.x}
-                cy={TARGET.y}
-                r="21"
-                fill={pigHit ? "#86efac" : "#4ade80"}
-                stroke="#15803d"
-                strokeWidth="3"
-              />
-              <ellipse
-                cx={TARGET.x}
-                cy={TARGET.y + 5}
-                rx="10"
-                ry="7"
-                fill="#bbf7d0"
-              />
-              <circle
-                cx={TARGET.x - 7}
-                cy={TARGET.y - 5}
-                r="2.5"
-                fill="#14532d"
-              />
-              <circle
-                cx={TARGET.x + 7}
-                cy={TARGET.y - 5}
-                r="2.5"
-                fill="#14532d"
-              />
-              <ellipse
-                cx={TARGET.x - 8}
-                cy={TARGET.y - 20}
-                rx="7"
-                ry="10"
-                fill="#4ade80"
-                stroke="#15803d"
-                strokeWidth="2"
-              />
-              <ellipse
-                cx={TARGET.x + 8}
-                cy={TARGET.y - 20}
-                rx="7"
-                ry="10"
-                fill="#4ade80"
-                stroke="#15803d"
-                strokeWidth="2"
-              />
-            </g>
+          <div className="rounded-2xl border border-white/30 bg-indigo-950/80 px-3 py-2 text-right shadow-lg backdrop-blur-sm sm:px-4 sm:py-3">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-200">
+              Shots
+            </p>
+            <p className="text-2xl font-black text-amber-300">{shots}</p>
+          </div>
+        </div>
 
+        {gameStatus === "playing" && !launched && !aiming && (
+          <div className="pointer-events-none absolute bottom-20 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-white/40 bg-indigo-950/75 px-4 py-2 text-center text-xs font-semibold shadow-lg backdrop-blur-sm sm:bottom-8 sm:text-sm">
+            <span className="mr-2 text-amber-300">↖</span>
+            Drag the bird backwards, then release!
+          </div>
+        )}
 
-            <g
-              onPointerDown={startAim}
-              className={launched ? "" : "cursor-grab"}
-            >
-              <circle
-                cx={bird.x}
-                cy={bird.y}
-                r="19"
-                fill="#f87171"
-                stroke="#b91c1c"
-                strokeWidth="3"
-              />
-              <circle
-                cx={bird.x + 6}
-                cy={bird.y - 5}
-                r="5"
-                fill="white"
-              />
-              <circle
-                cx={bird.x + 8}
-                cy={bird.y - 5}
-                r="2.5"
-                fill="#111827"
-              />
-              <path
-                d={`M${bird.x + 16} ${bird.y} l12 5 l-12 4 Z`}
-                fill="#facc15"
-                stroke="#ca8a04"
-                strokeWidth="1"
-              />
-              <path
-                d={`M${bird.x - 15} ${bird.y + 4} l-10 8 l13 -2 Z`}
-                fill="#dc2626"
-              />
-            </g>
+        {aiming && (
+          <div className="pointer-events-none absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-indigo-950/80 px-4 py-2 text-xs font-bold text-amber-300 shadow-lg">
+            Release to Fling!
+          </div>
+        )}
 
+        
+        <button
+          onClick={resetLevel}
+          className="absolute bottom-3 right-3 rounded-xl border border-white/50 bg-white/90 px-3 py-2 text-xs font-bold text-indigo-950 shadow-lg transition hover:scale-105 hover:bg-white sm:bottom-6 sm:right-6 sm:px-4 sm:text-sm"
+        >
+          ↻ Reset level
+        </button>
 
-            {pigHit && (
-              <g>
-                <rect
-                  x="190"
-                  y="125"
-                  width="420"
-                  height="150"
-                  rx="24"
-                  fill="#ffffff"
-                  opacity="0.95"
-                />
-                <text
-                  x="400"
-                  y="180"
-                  textAnchor="middle"
-                  fontSize="34"
-                  fontWeight="900"
-                  fill="#15803d"
-                >
-                  Level Complete!
-                </text>
-                <text
-                  x="400"
-                  y="218"
-                  textAnchor="middle"
-                  fontSize="18"
-                  fontWeight="600"
-                  fill="#334155"
-                >
-                  Great shot! You hit the target.
-                </text>
-                <text
-                  x="400"
-                  y="247"
-                  textAnchor="middle"
-                  fontSize="15"
-                  fill="#64748b"
-                >
-                  Press Reset to play again.
-                </text>
-              </g>
-            )}
-          </svg>
-        </section>
+        
+        {gameStatus !== "playing" && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-indigo-950/55 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-sm rounded-3xl border border-white/30 bg-indigo-950/95 p-6 text-center shadow-2xl sm:p-8">
+              {gameStatus === "won" ? (
+                <>
+                  <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-amber-400 text-4xl shadow-lg">
+                    🎉
+                  </div>
 
-        <p className="mt-4 text-center text-sm font-medium text-slate-600">
-          Tip: Pull the bird to the left and slightly down to launch it toward
-          the target.
-        </p>
-      </div>
-    </main>
+                  <p className="text-xs font-bold uppercase tracking-[0.25em] text-amber-300">
+                    Level completed
+                  </p>
+
+                  <h2 className="mt-2 text-3xl font-black">
+                    {allLevelsCompleted ? "You did it!" : "Great shot!"}
+                  </h2>
+
+                  <p className="mt-3 text-sm leading-relaxed text-indigo-100">
+                    {allLevelsCompleted
+                      ? "Amazing! You have completed every level in Fling."
+                      : `You conquered ${level.name}. Ready for the next challenge?`}
+                  </p>
+
+                  <div className="mt-5 rounded-xl bg-indigo-900/80 px-4 py-3">
+                    <p className="text-xs text-indigo-300">Shots taken</p>
+                    <p className="mt-1 text-2xl font-black text-amber-300">
+                      {shots}
+                    </p>
+                  </div>
+
+                  {allLevelsCompleted ? (
+                    <button
+                      onClick={() => {
+                        setLevelIndex(0);
+                        resetLevel();
+                      }}
+                      className="mt-5 w-full rounded-xl bg-amber-400 px-5 py-3 font-black text-indigo-950 transition hover:bg-amber-300"
+                    >
+                      Play Again
+                    </button>
+                  ) : (
+                    <button
+                      onClick={nextLevel}
+                      className="mt-5 w-full rounded-xl bg-amber-400 px-5 py-3 font-black text-indigo-950 transition hover:bg-amber-300"
+                    >
+                      Next Level →
+                    </button>
+                  )}
+
+                  <button
+                    onClick={resetLevel}
+                    className="mt-3 w-full rounded-xl border border-indigo-700 px-5 py-3 font-semibold text-white transition hover:bg-indigo-900"
+                  >
+                    Replay This Level
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-rose-500/20 text-4xl">
+                    💥
+                  </div>
+
+                  <p className="text-xs font-bold uppercase tracking-[0.25em] text-rose-300">
+                    Not quite!
+                  </p>
+
+                  <h2 className="mt-2 text-3xl font-black">Missed!</h2>
+
+                  <p className="mt-3 text-sm leading-relaxed text-indigo-100">
+                    {message || "Your bird missed the target."} Try changing your angle or pulling the bird back further.
+                  </p>
+
+                  <button
+                    onClick={resetLevel}
+                    className="mt-6 w-full rounded-xl bg-amber-400 px-5 py-3 font-black text-indigo-950 transition hover:bg-amber-300"
+                  >
+                    Try Again
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setLevelIndex(0);
+                      resetLevel();
+                    }}
+                    className="mt-3 w-full rounded-xl border border-indigo-700 px-5 py-3 font-semibold text-white transition hover:bg-indigo-900"
+                  >
+                    Restart from Level 1
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
   );
 }
