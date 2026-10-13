@@ -11,7 +11,7 @@ Fling is a casual browser-based puzzle game built with React. Players aim and la
 - **Puzzle Challenges:** Overcome obstacles and reach targets across multiple levels.
 - **Responsive UI:** Interface styled with Tailwind CSS.
 - **Form Validation:** Validate user input on login and signup forms.
-- **Firebase Integration:** Firebase Authentication and Cloud Firestore setup.
+- **Firebase Integration:** Firebase Authentication and Cloud Firestore setup
 
 ## 🛠️ Technologies Used
 
