@@ -6,129 +6,98 @@ import {
   useState,
 } from "react";
 
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile,
+} from "firebase/auth";
+
+import { doc, serverTimestamp, setDoc } from "firebase/firestore";
+import { auth, db } from "../firebase";
+
 const AuthContext = createContext(null);
-
-const USERS_KEY = "fling_demo_users";
-const SESSION_KEY = "fling_user";
-
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-
   useEffect(() => {
-    try {
-      const savedUser = localStorage.getItem("fling_user");
-
-      if (savedUser) {
-        setUser(JSON.parse(savedUser));
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (firebaseUser) => {
+        setUser(firebaseUser);
+        setLoading(false);
+      },
+      (error) => {
+        console.error("Authentication state error:", error);
+        setUser(null);
+        setLoading(false);
       }
-    } catch (error) {
-      console.error("Failed to restore user session:", error);
-      localStorage.removeItem("fling_user");
-    } finally {
-      setLoading(false);
-    }
+    );
+
+    return unsubscribe;
   }, []);
 
-
-  async function signup(name, email, password) {
-    if (!name.trim() || !email.trim() || !password) {
-      throw new Error("Please complete all fields.");
-    }
-
-    if (password.length < 8) {
-      throw new Error("Password must be at least 8 characters.");
-    }
-
-    const normalizedEmail = email.trim().toLowerCase();
-    const users = JSON.parse(
-      localStorage.getItem(USERS_KEY) || "[]"
+  const signup = async (name, email, password) => {
+    const credential = await createUserWithEmailAndPassword(
+      auth,
+      email.trim(),
+      password
     );
 
-    if (users.some((item) => item.email === normalizedEmail)) {
-      throw new Error("An account with this email already exists.");
-    }
+    await updateProfile(credential.user, {
+      displayName: name.trim(),
+    });
 
-    const newUser = {
-      id: crypto.randomUUID(),
-      name: name.trim(),
-      email: normalizedEmail,
-      password,
-    };
-
-    localStorage.setItem(
-      USERS_KEY,
-      JSON.stringify([...users, newUser])
+    await setDoc(
+      doc(db, "users", credential.user.uid),
+      {
+        uid: credential.user.uid,
+        displayName: name.trim(),
+        email: credential.user.email,
+        completedLevels: [],
+        bestShotsByLevel: {},
+        totalWins: 0,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
     );
 
-    const sessionUser = {
-      id: newUser.id,
-      name: newUser.name,
-      email: newUser.email,
-    };
+    setUser(credential.user);
 
-    localStorage.setItem(
-      SESSION_KEY,
-      JSON.stringify(sessionUser)
+    return credential.user;
+  };
+
+  const login = async (email, password) => {
+    const credential = await signInWithEmailAndPassword(
+      auth,
+      email.trim(),
+      password
     );
 
-    setUser(sessionUser);
-    return sessionUser;
-  }
+    setUser(credential.user);
 
-  async function login(email, password) {
-    if (!email.trim() || !password) {
-      throw new Error("Email and password are required.");
-    }
+    return credential.user;
+  };
 
-    const normalizedEmail = email.trim().toLowerCase();
-    const users = JSON.parse(
-      localStorage.getItem(USERS_KEY) || "[]"
-    );
-
-    const foundUser = users.find(
-      (item) =>
-        item.email === normalizedEmail &&
-        item.password === password
-    );
-
-    if (!foundUser) {
-      throw new Error("Invalid email or password.");
-    }
-
-    const sessionUser = {
-      id: foundUser.id,
-      name: foundUser.name,
-      email: foundUser.email,
-    };
-
-    localStorage.setItem(
-      SESSION_KEY,
-      JSON.stringify(sessionUser)
-    );
-
-    setUser(sessionUser);
-    return sessionUser;
-  }
-
-
-  function logout() {
-    localStorage.removeItem("fling_user");
+  const logout = async () => {
+    await signOut(auth);
     setUser(null);
-  }
+  };
+
+  const value = {
+    user,
+    loading,
+    login,
+    signup,
+    logout,
+  };
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        loading,
-        login,
-        signup,
-        logout,
-      }}
-    >
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
@@ -137,8 +106,8 @@ export function AuthProvider({ children }) {
 export function useAuth() {
   const context = useContext(AuthContext);
 
-  if (context === null) {
-    throw new Error("useAuth must be used inside an AuthProvider.");
+  if (!context) {
+    throw new Error("useAuth must be used inside an AuthProvider");
   }
 
   return context;

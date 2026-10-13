@@ -15,7 +15,6 @@ import { AuthProvider } from "./context/AuthContext";
 export default function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
         <Routes>
           <Route
             path="/"
@@ -34,7 +33,6 @@ export default function App() {
             element={<Navigate to="/login" replace />}
           />
         </Routes>
-      </AuthProvider>
     </BrowserRouter>
   );
 }

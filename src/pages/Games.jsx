@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
+
 const START = { x: 155, y: 335 };
 const POWER = 9;
 const GRAVITY = 450;
