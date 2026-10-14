@@ -156,14 +156,9 @@ export default function Games() {
   const releaseBird = (event) => {
     if (!aimingRef.current) return;
 
-    const point = getPoint(event);
 
-    if (point) {
-      handleAimRelease(point);
-    } else {
-      handleAimRelease(aimPoint);
-    }
-  };
+      handleAimRelease(positionRef.current);
+      };
 
   const handleAimRelease = (point) => {
     if (!aimingRef.current) return;
