@@ -124,6 +124,44 @@ Cloud Firestore is configured for storing user-related data.
 4. Adjust your aim and launch with the appropriate force.
 5. Overcome obstacles and reach the target to complete each level.
 
+## 🌐 Deployment on Netlify
+
+Fling can be deployed to Netlify for public access.
+
+1. Connect the repository
+
+Push your project to GitHub.
+
+Sign in to Netlify.
+
+Import the Git repository.
+
+Configure the build command as npm run build.
+
+Set the publish directory to dist.
+
+2. Configure environment variables
+
+In Netlify, open your site's environment variable settings and add the six VITE_FIREBASE_... variables listed in the Firebase configuration section.
+
+Use the correct values from your Firebase web app configuration. Trigger a new deployment after changing the variables so they are included in the build.
+
+3. Configure React Router redirects
+
+Because Fling uses React Router, directly opening or refreshing routes such as /login, /signup, or /game requires a Netlify redirect rule.
+
+Create a file named _redirects inside the public directory with this content:
+
+```
+/index.html   200
+```
+
+Vite copies files from public into the build output directory, so this rule should appear in the deployed dist/_redirects file.
+
+The rule allows Netlify to serve the React application for client-side routes instead of returning a 404 page.
+
+
+
 ## 🗺️ Future Improvements
 
 - Save player progress across sessions.
