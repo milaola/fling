@@ -8,11 +8,12 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
+
 import { useAuth } from "../context/AuthContext";
 import AuthLayout from "../components/AuthLayout";
 
 export default function Signup() {
-  const { signup, user, loading } = useAuth();
+  const { signup } = useAuth();
   const navigate = useNavigate();
 
   const [name, setName] = useState("");
@@ -27,18 +28,69 @@ export default function Signup() {
     e.preventDefault();
     setError("");
 
+    const trimmedName = name.trim();
+    const trimmedEmail = email.trim();
+
+    if (!trimmedName) {
+      setError("Please enter your full name.");
+      return;
+    }
+
     if (password !== confirmPassword) {
       setError("Your passwords do not match.");
+      return;
+    }
+
+    if (password.length < 8) {
+      setError("Your password must be at least 8 characters.");
       return;
     }
 
     setSubmitting(true);
 
     try {
-      await signup(name, email, password);
+      await signup(trimmedName, trimmedEmail, password);
       navigate("/game", { replace: true });
     } catch (err) {
-      setError(err.message || "Unable to create your account.");
+      console.error("Signup error:", err);
+
+      const errorMessages = {
+        "auth/email-already-in-use":
+          "An account with this email already exists.",
+
+        "auth/invalid-email":
+          "Please enter a valid email address.",
+
+        "auth/weak-password":
+          "Your password is too weak. Please choose a stronger one.",
+
+        "auth/network-request-failed":
+          "Network error. Check your internet connection and try again.",
+
+        "auth/operation-not-allowed":
+          "Email sign-up is currently disabled. Please contact support.",
+
+        "auth/invalid-api-key":
+          "Firebase configuration is invalid. Please contact support.",
+
+        "auth/too-many-requests":
+          "Too many attempts. Please wait a moment and try again.",
+
+        "permission-denied":
+          "Your account may have been created, but your profile could not be saved. Please try again or contact support.",
+
+        "unavailable":
+          "The service is temporarily unavailable. Please try again.",
+
+        "deadline-exceeded":
+          "The request took too long. Please check your connection and try again.",
+      };
+
+      setError(
+        errorMessages[err.code] ||
+        err.message ||
+        "Unable to create your account. Please try again."
+      );
     } finally {
       setSubmitting(false);
     }
@@ -56,6 +108,7 @@ export default function Signup() {
         <h2 className="text-2xl font-black text-indigo-950">
           Create Your Account
         </h2>
+
         <p className="text-sm text-slate-500">
           Join the fun and start flinging!
         </p>
@@ -72,6 +125,7 @@ export default function Signup() {
 
           <div className={wrapperClass}>
             <UserRound size={16} className="text-slate-400" />
+
             <input
               id="name"
               type="text"
@@ -95,6 +149,7 @@ export default function Signup() {
 
           <div className={wrapperClass}>
             <Mail size={16} className="text-slate-400" />
+
             <input
               id="signup-email"
               type="email"
@@ -118,6 +173,7 @@ export default function Signup() {
 
           <div className={wrapperClass}>
             <Lock size={16} className="text-slate-400" />
+
             <input
               id="signup-password"
               type={showPassword ? "text" : "password"}
@@ -132,11 +188,19 @@ export default function Signup() {
 
             <button
               type="button"
-              aria-label={showPassword ? "Hide password" : "Show password"}
-              onClick={() => setShowPassword((value) => !value)}
+              aria-label={
+                showPassword ? "Hide password" : "Show password"
+              }
+              onClick={() =>
+                setShowPassword((value) => !value)
+              }
               className="text-slate-400"
             >
-              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              {showPassword ? (
+                <EyeOff size={16} />
+              ) : (
+                <Eye size={16} />
+              )}
             </button>
           </div>
         </div>
@@ -151,6 +215,7 @@ export default function Signup() {
 
           <div className={wrapperClass}>
             <Lock size={16} className="text-slate-400" />
+
             <input
               id="confirm-password"
               type={showPassword ? "text" : "password"}
@@ -165,7 +230,11 @@ export default function Signup() {
         </div>
 
         {error && (
-          <p role="alert" className="text-sm text-red-600">
+          <p
+            role="alert"
+            aria-live="polite"
+            className="text-sm text-red-600"
+          >
             {error}
           </p>
         )}
@@ -187,7 +256,7 @@ export default function Signup() {
         <button
           type="button"
           onClick={() =>
-            setError("Google sign-in is unavailable in demo mode.")
+            setError("Google sign-in is unavailable yet.")
           }
           className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50"
         >
